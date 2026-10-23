@@ -1,0 +1,12 @@
+{
+  "name": "deskflow-rainmeter",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Local-first task planning and Rainmeter skin generation",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "check": "node --check core.js && node --check app.js"
+  },
+  "engines": { "node": ">=22" }
+}

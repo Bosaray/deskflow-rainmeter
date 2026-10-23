@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "title": "学习与生活",
+  "items": [
+    {"id":"example-structures","text":"复习数据结构","done":false,"priority":"high","due":""},
+    {"id":"example-readme","text":"整理项目 README","done":false,"priority":"medium","due":""},
+    {"id":"example-running","text":"晚上跑步","done":false,"priority":"low","due":""}
+  ],
+  "appearance": {"theme":"dark","layout":"comfortable"},
+  "drafts": {
+    "prompt":"今天要完成：复习数据结构、整理项目 README、晚上跑步。",
+    "aiPrompt":""
+  }
+}
