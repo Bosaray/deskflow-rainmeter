@@ -82,7 +82,7 @@
   }
 
   function snapshot(includeDrafts = false) {
-    const result = { items: state.items.map(item => ({ ...item })), title: state.title, theme: state.theme, layout: state.layout };
+    const result = { items: state.items.map(item => ({ ...item })), projects: state.projects.map(project => ({ ...project })), activeProject: state.activeProject, title: state.title, theme: state.theme, layout: state.layout };
     if (includeDrafts) Object.assign(result, { prompt: state.prompt, aiPrompt: state.aiPrompt });
     return result;
   }
@@ -137,7 +137,44 @@
   }
 
   function visibleTasks() {
-    return state.items.filter(item => Core.matchesTask(item, { status: filter, query, dateView, today: localDay() }));
+    return scopedTasks().filter(item => Core.matchesTask(item, { status: filter, query, dateView, today: localDay() }));
+  }
+
+  function scopedTasks() { return Core.projectTasks(state); }
+  function targetProject() { return state.activeProject === 'all' ? 'inbox' : state.activeProject; }
+  function selectedProject() { return state.projects.find(project => project.id === state.activeProject); }
+  function scopeName() { return selectedProject()?.name || (state.activeProject === 'inbox' ? '收件箱' : '全部项目'); }
+  function exportDraft() { return { ...state, items: scopedTasks() }; }
+  function replaceProjectItems(items, title) {
+    const projectId = targetProject();
+    const others = state.items.filter(item => item.projectId !== projectId);
+    if (others.length + items.length > Core.LIMITS.tasks) throw new Error('整个工作区最多支持 500 项任务');
+    if (state.projects.some(project => project.id === projectId && project.archived)) throw new Error('请先恢复此项目，再添加任务');
+    change(() => {
+      state.items = [...others, ...items.map(item => ({ ...item, projectId }))];
+      state.title = title;
+      state.activeProject = projectId;
+    }, { reset: true });
+  }
+
+  function renderProjects() {
+    const select = $('#projectSelect');
+    select.replaceChildren();
+    const choices = [{ id: 'all', name: '全部项目' }, { id: 'inbox', name: '收件箱' }, ...state.projects];
+    for (const project of choices) {
+      const option = element('option', '', (project.archived ? '已归档 · ' : '') + project.name + ' · ' + Core.projectTasks(state, project.id).length);
+      option.value = project.id;
+      select.append(option);
+    }
+    select.value = state.activeProject;
+    const project = selectedProject();
+    $('#renameProject').disabled = !project;
+    $('#archiveProject').disabled = !project;
+    $('#archiveProject').textContent = project?.archived ? '恢复项目' : '归档项目';
+    $('#createProject').disabled = state.projects.length >= 50;
+    $('#quickCapture').disabled = state.items.length >= Core.LIMITS.tasks;
+    $('#projectHint').textContent = project?.archived ? '已归档：任务仍完整保留。恢复项目后可继续添加任务。' : '当前：' + scopeName() + '。生成和 AI 导入替换当前项目；选择“全部项目”时写入收件箱。';
+    $('#exportScope').textContent = '皮肤导出：' + scopeName() + '的全部任务（不受搜索和日期筛选影响）。JSON 备份包含整个工作区。';
   }
 
   function element(tag, className, text) {
@@ -306,7 +343,18 @@
     due.setAttribute('aria-label', '设置截止日期：' + item.text);
     due.addEventListener('change', () => updateTask(item.id, { due: Core.isValidDate(due.value) ? due.value : '' }));
     dueLabel.append(due);
-    meta.append(priorityLabel, dueLabel);
+    const projectLabel = element('label', '', '项目');
+    const projectSelect = focusable(element('select', 'task-project'), item.id, 'project');
+    for (const project of [{ id: 'inbox', name: '收件箱' }, ...state.projects.filter(project => !project.archived || project.id === item.projectId)]) {
+      const option = element('option', '', project.name + (project.archived ? '（已归档）' : ''));
+      option.value = project.id;
+      projectSelect.append(option);
+    }
+    projectSelect.value = item.projectId;
+    projectSelect.setAttribute('aria-label', '移动到项目：' + item.text);
+    projectSelect.addEventListener('change', () => updateTask(item.id, { projectId: projectSelect.value }));
+    projectLabel.append(projectSelect);
+    meta.append(priorityLabel, dueLabel, projectLabel);
     if (!item.done && item.due && item.due <= localDay()) {
       meta.append(element('span', 'due-badge' + (item.due < localDay() ? ' overdue' : ''), item.due < localDay() ? '已逾期' : '今天截止'));
     }
@@ -317,29 +365,31 @@
   function render() {
     if (renderFrame !== null) { cancelAnimationFrame(renderFrame); renderFrame = null; }
     const focused = document.activeElement?.dataset.focusKey;
+    renderProjects();
     focusTargets.clear();
     $('#tasks').replaceChildren();
     const shown = visibleTasks();
     shown.forEach((item, index) => $('#tasks').append(renderTask(item, index, shown)));
     if (!shown.length) {
-      const message = !state.items.length ? '清单是空的。添加第一项待办吧。' : query || dateView !== 'all' ? '没有匹配的待办，试试其他关键词或日期范围。' : filter === 'done' ? '还没有已完成的待办。' : '这一组任务已全部完成。';
+      const message = !scopedTasks().length ? '此项目还没有任务。添加第一项待办吧。' : query || dateView !== 'all' ? '没有匹配的待办，试试其他关键词或日期范围。' : filter === 'done' ? '还没有已完成的待办。' : '这一组任务已全部完成。';
       $('#tasks').append(element('div', 'empty-filter', message));
     }
-    const completed = state.items.filter(item => item.done).length;
-    const percent = state.items.length ? Math.round(completed / state.items.length * 100) : 0;
-    $('#skinTitle').textContent = state.title;
-    $('#skinSub').textContent = `共 ${state.items.length} 件事，按自己的节奏来。`;
-    $('#progress').textContent = `${completed} / ${state.items.length} COMPLETED`;
+    const scoped = scopedTasks();
+    const completed = scoped.filter(item => item.done).length;
+    const percent = scoped.length ? Math.round(completed / scoped.length * 100) : 0;
+    $('#skinTitle').textContent = exportDraft().title;
+    $('#skinSub').textContent = `共 ${scoped.length} 件事，按自己的节奏来。`;
+    $('#progress').textContent = `${completed} / ${scoped.length} COMPLETED`;
     $('#progressBar').style.width = percent + '%';
     $('.progress-track').setAttribute('aria-valuenow', String(percent));
-    $('#allCount').textContent = state.items.length;
-    $('#activeCount').textContent = state.items.length - completed;
+    $('#allCount').textContent = scoped.length;
+    $('#activeCount').textContent = scoped.length - completed;
     $('#doneCount').textContent = completed;
-    $('#visibleCount').textContent = shown.length === state.items.length ? '显示全部任务' : `显示 ${shown.length} / ${state.items.length} 项`;
+    $('#visibleCount').textContent = shown.length === scoped.length ? '显示全部任务' : `显示 ${shown.length} / ${scoped.length} 项`;
     $('#clearDone').disabled = !completed;
     $('#undo').disabled = !undoStack.length;
     $('#redo').disabled = !redoStack.length;
-    $('#addTask').disabled = state.items.length >= Core.LIMITS.tasks;
+    $('#addTask').disabled = state.items.length >= Core.LIMITS.tasks || !!selectedProject()?.archived;
     document.querySelectorAll('[data-filter]').forEach(node => {
       node.classList.toggle('active', node.dataset.filter === filter);
       node.setAttribute('aria-pressed', String(node.dataset.filter === filter));
@@ -384,10 +434,63 @@
       const items = Core.normalizeTasks(Core.parsePrompt(prompt), true);
       if (!items.length) { toast('先写下至少一件要做的事'); $('#prompt').focus(); return; }
       editingId = null;
-      change(() => { state.items = items; state.title = Core.inferTitle(prompt); }, { reset: true });
+      replaceProjectItems(items, Core.inferTitle(prompt));
       toast('已生成清单，可直接编辑右侧预览');
     } catch (error) { toast(error.message); }
   }
+
+  $('#projectSelect').addEventListener('change', event => {
+    editingId = null;
+    state.activeProject = event.target.value;
+    resetView();
+    persist();
+    render();
+  });
+  $('#createProject').addEventListener('click', () => {
+    const name = $('#projectName').value.trim();
+    if (!name || name.length > 40) { toast('输入 1–40 个字符的项目名称'); $('#projectName').focus(); return; }
+    if (state.projects.length >= 50) { toast('最多支持 50 个项目'); return; }
+    if (state.projects.some(project => project.name.toLocaleLowerCase() === name.toLocaleLowerCase())) { toast('已有同名项目，请换个名称'); return; }
+    change(() => {
+      const id = Core.createId();
+      state.projects.push({ id, name, archived: false });
+      state.activeProject = id;
+    }, { reset: true });
+    $('#projectName').value = '';
+    toast('项目已创建，可以添加任务或生成清单');
+  });
+  $('#renameProject').addEventListener('click', () => {
+    const project = selectedProject();
+    if (!project) return;
+    const name = $('#projectName').value.trim();
+    if (!name || name.length > 40) { toast('在项目名称框中填写新名称，再点击重命名'); $('#projectName').focus(); return; }
+    if (state.projects.some(other => other.id !== project.id && other.name.toLocaleLowerCase() === name.toLocaleLowerCase())) { toast('已有同名项目，请换个名称'); return; }
+    change(() => { project.name = name; });
+    $('#projectName').value = '';
+  });
+  $('#archiveProject').addEventListener('click', () => {
+    const project = selectedProject();
+    if (!project) return;
+    change(() => { project.archived = !project.archived; });
+    toast(project.archived ? '项目已归档，全部项目视图将隐藏它；可随时恢复' : '项目已恢复');
+  });
+  function captureInbox() {
+    const text = $('#quickTask').value.trim();
+    if (!text) { $('#quickTask').focus(); return; }
+    if (text.length > Core.LIMITS.text || state.items.length >= Core.LIMITS.tasks) { toast('任务最多 500 字，工作区最多 500 项'); return; }
+    const [item] = Core.normalizeTasks([text]);
+    change(() => {
+      state.items.push({ ...item, projectId: 'inbox' });
+      state.activeProject = 'inbox';
+    }, { reset: true });
+    $('#quickTask').value = '';
+    $('#quickTask').focus();
+    toast('已加入收件箱');
+  }
+  $('#quickCapture').addEventListener('click', captureInbox);
+  $('#quickTask').addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); captureInbox(); }
+  });
 
   $('#prompt').addEventListener('input', event => { state.prompt = event.target.value; persist(); });
   $('#aiPrompt').addEventListener('input', event => { state.aiPrompt = event.target.value; persist(); });
@@ -407,7 +510,7 @@
       if (!$('#aiResult').value.trim()) { toast('先粘贴 ChatGPT 返回的 JSON'); $('#aiResult').focus(); return; }
       const imported = Core.parseAiResult($('#aiResult').value);
       editingId = null;
-      change(() => Object.assign(state, imported), { reset: true });
+      replaceProjectItems(imported.items, imported.title);
       toast(`已导入 ${imported.items.length} 项任务；可撤销恢复原清单`);
     } catch (error) { toast('无法导入：' + (error instanceof SyntaxError ? 'JSON 格式有误，请检查返回结果' : error.message)); }
   });
@@ -423,22 +526,29 @@
   for (const [id, mode] of [['sortDue', 'due'], ['sortPriority', 'priority']]) {
     $('#' + id).addEventListener('click', () => {
       $('.sort-menu').open = false;
-      change(() => { state.items = Core.sortTasks(state.items, mode); });
+      change(() => {
+        const ids = new Set(scopedTasks().map(item => item.id));
+        const sorted = Core.sortTasks(scopedTasks(), mode);
+        let index = 0;
+        state.items = state.items.map(item => ids.has(item.id) ? sorted[index++] : item);
+      });
       toast(mode === 'due' ? '已按截止日期整理；无日期任务在后，已完成任务置底' : '已按高、中、低优先级整理；已完成任务置底');
     });
   }
   document.querySelectorAll('[data-filter]').forEach(node => node.addEventListener('click', () => { filter = node.dataset.filter; render(); }));
   $('#addTask').addEventListener('click', () => {
-    if (state.items.length >= Core.LIMITS.tasks) return;
+    if (state.items.length >= Core.LIMITS.tasks || selectedProject()?.archived) return;
     const [item] = Core.normalizeTasks(['新待办']);
+    item.projectId = targetProject();
     change(() => { state.items.push(item); }, { reset: true });
     startEditing(item.id);
   });
   $('#clearDone').addEventListener('click', () => {
-    const count = state.items.filter(item => item.done).length;
+    const ids = new Set(scopedTasks().filter(item => item.done).map(item => item.id));
+    const count = ids.size;
     if (!count || !confirm(`清理 ${count} 项已完成任务？之后可点击“撤销”恢复。`)) return;
     editingId = null;
-    change(() => { state.items = state.items.filter(item => !item.done); });
+    change(() => { state.items = state.items.filter(item => !ids.has(item.id)); });
     toast(`已清理 ${count} 项，可撤销恢复`);
   });
   $('#undo').addEventListener('click', () => travel(undoStack, redoStack, 'before'));
@@ -452,14 +562,14 @@
     }
   });
   $('#download').addEventListener('click', () => {
-    if (!state.items.length) { toast('先添加至少一项任务再下载皮肤'); return; }
-    download(Core.encodeUtf16LE(Core.generateIni(state)), 'application/octet-stream', 'DeskflowTodo.ini');
+    if (!scopedTasks().length) { toast('先添加至少一项任务再下载皮肤'); return; }
+    download(Core.encodeUtf16LE(Core.generateIni(exportDraft())), 'application/octet-stream', 'DeskflowTodo.ini');
     $('#installGuide').open = true;
     toast('皮肤已下载，中文编码已处理；下方有安装步骤');
   });
   $('#copy').addEventListener('click', () => {
-    if (!state.items.length) { toast('先添加至少一项任务再复制配置'); return; }
-    return copy(Core.generateIni(state), '配置已复制；保存文件请选择 UTF-16 LE 编码', '手动保存配置时请选择 UTF-16 LE 编码；直接下载 .ini 会自动处理中文编码。');
+    if (!scopedTasks().length) { toast('先添加至少一项任务再复制配置'); return; }
+    return copy(Core.generateIni(exportDraft()), '配置已复制；保存文件请选择 UTF-16 LE 编码', '手动保存配置时请选择 UTF-16 LE 编码；直接下载 .ini 会自动处理中文编码。');
   });
   $('#exportBackup').addEventListener('click', () => {
     download(JSON.stringify(Core.makeBackup(state), null, 2), 'application/json;charset=utf-8', 'Deskflow-backup-' + localDay() + '.json');
@@ -473,7 +583,7 @@
     try {
       if (file.size > Core.LIMITS.backupBytes) throw new Error('备份文件不能大于 2 MB');
       const { draft, includesDrafts } = Core.parseBackup(await file.text());
-      if (state.items.length && !confirm('导入备份将替换当前清单，之后可撤销恢复。继续导入吗？')) return;
+      if (state.items.length && !confirm('导入备份将替换整个工作区（包括所有项目），之后可撤销恢复。继续导入吗？')) return;
       editingId = null;
       change(() => {
         if (!includesDrafts) Object.assign(draft, { prompt: state.prompt, aiPrompt: state.aiPrompt });

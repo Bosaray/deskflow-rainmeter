@@ -6,7 +6,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const VERSION = '0.3.0';
+  const VERSION = '0.4.0';
   const LIMITS = Object.freeze({ tasks: 500, text: 500, title: 80, backupBytes: 2 * 1024 * 1024, skinBytes: 8 * 1024 * 1024 });
   const THEMES = Object.freeze({
     dark: { bg: '19,23,24,255', border: '53,60,60', accent: '200,241,105', text: '235,238,228', muted: '137,148,141', row: '25,30,31', high: '255,156,106' },
@@ -46,7 +46,8 @@
         text: raw.text.trim(),
         done: raw.done === true || raw.done === 1,
         due: isValidDate(raw.due) ? raw.due : '',
-        priority: Object.hasOwn(PRIORITIES, raw.priority) ? raw.priority : 'medium'
+        priority: Object.hasOwn(PRIORITIES, raw.priority) ? raw.priority : 'medium',
+        ...(typeof raw.projectId === 'string' ? { projectId: raw.projectId } : {})
       });
     }
     return result;
@@ -54,15 +55,34 @@
 
   function normalizeDraft(raw = {}) {
     if (!raw || typeof raw !== 'object') throw new Error('清单数据无效');
+    const projects = normalizeProjects(raw.projects);
+    const projectIds = new Set(projects.map(project => project.id));
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
+      projects,
+      activeProject: raw.activeProject === 'inbox' || projectIds.has(raw.activeProject) ? raw.activeProject : 'all',
       title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim().slice(0, LIMITS.title) : '今日待办',
-      items: normalizeTasks(raw.items || []),
+      items: normalizeTasks(raw.items || []).map(item => ({ ...item, projectId: projectIds.has(item.projectId) ? item.projectId : 'inbox' })),
       prompt: typeof raw.prompt === 'string' ? raw.prompt : '',
       aiPrompt: typeof raw.aiPrompt === 'string' ? raw.aiPrompt : '',
       theme: Object.hasOwn(THEMES, raw.theme) ? raw.theme : 'dark',
       layout: raw.layout === 'compact' ? 'compact' : 'comfortable'
     };
+  }
+
+  function normalizeProjects(value = []) {
+    if (!Array.isArray(value) || value.length > 50) throw new Error('工作区最多支持 50 个项目');
+    const ids = new Set(['all', 'inbox']);
+    return value.map(project => {
+      if (!project || typeof project.id !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(project.id) || ids.has(project.id) || typeof project.name !== 'string' || !project.name.trim() || project.name.length > 40) throw new Error('项目标识或名称无效');
+      ids.add(project.id);
+      return { id: project.id, name: project.name.trim(), archived: project.archived === true };
+    });
+  }
+
+  function projectTasks(draft, projectId = draft.activeProject) {
+    const archived = new Set(draft.projects.filter(project => project.archived).map(project => project.id));
+    return draft.items.filter(item => projectId === 'all' ? !archived.has(item.projectId) : item.projectId === projectId);
   }
 
   function parsePrompt(value) {
@@ -151,7 +171,9 @@
   function makeBackup(draft, now = new Date()) {
     const clean = normalizeDraft(draft);
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
+      projects: clean.projects,
+      activeProject: clean.activeProject,
       title: clean.title,
       items: clean.items,
       appearance: { theme: clean.theme, layout: clean.layout },
@@ -162,7 +184,8 @@
 
   function parseBackup(source) {
     const data = typeof source === 'string' ? JSON.parse(source.replace(/^\uFEFF/, '')) : source;
-    if (!data || data.schemaVersion !== 1 || !Array.isArray(data.items)) throw new Error('备份格式版本不支持');
+    if (!data || ![1, 2].includes(data.schemaVersion) || !Array.isArray(data.items)) throw new Error('备份格式版本不支持');
+    if (data.schemaVersion === 2 && !Array.isArray(data.projects)) throw new Error('工作区备份缺少项目列表');
     const items = normalizeTasks(data.items, true);
     const draft = normalizeDraft({ ...data, items, ...data.appearance, ...data.drafts });
     return { draft, includesDrafts: !!data.drafts && typeof data.drafts === 'object' };
@@ -300,5 +323,5 @@
     return bytes;
   }
 
-  return Object.freeze({ VERSION, LIMITS, THEMES, PRIORITIES, createId, isValidDate, normalizeTasks, normalizeDraft, parsePrompt, inferTitle, parseAiResult, dateOnly, addDateDays, matchesTask, sortTasks, reorderVisibleTasks, makeBackup, parseBackup, decodeSkinBytes, mergeSkinProgress, safeRainmeterText, generateIni, encodeUtf16LE });
+  return Object.freeze({ VERSION, LIMITS, THEMES, PRIORITIES, createId, isValidDate, normalizeTasks, normalizeProjects, projectTasks, normalizeDraft, parsePrompt, inferTitle, parseAiResult, dateOnly, addDateDays, matchesTask, sortTasks, reorderVisibleTasks, makeBackup, parseBackup, decodeSkinBytes, mergeSkinProgress, safeRainmeterText, generateIni, encodeUtf16LE });
 });

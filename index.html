@@ -14,7 +14,7 @@
   <div class="shell">
     <header class="top">
       <div class="brand"><div class="mark" aria-hidden="true">↗</div>deskflow <small>for Rainmeter</small></div>
-      <div class="topright"><span class="pulse" aria-hidden="true"></span> LOCAL <span aria-hidden="true">/</span> v0.3</div>
+      <div class="topright"><span class="pulse" aria-hidden="true"></span> LOCAL <span aria-hidden="true">/</span> v0.4</div>
     </header>
     <noscript><p class="noscript">Deskflow 需要启用 JavaScript 才能生成和保存清单。</p></noscript>
     <section class="hero">
@@ -25,6 +25,19 @@
     </section>
     <main class="grid">
       <div class="input-stack">
+        <section class="card workspace-card" aria-labelledby="workspaceHeading">
+          <div class="cardhead"><h2 class="cardtitle" id="workspaceHeading"><span class="step">⌂</span>我的工作区</h2><span class="hint">先收集，再安排</span></div>
+          <div class="formbody">
+            <label class="label" for="quickTask">随手记一件事，放进收件箱</label>
+            <div class="workspace-row"><input id="quickTask" type="text" maxlength="500" placeholder="想到什么就记下来，按 Enter 添加"><button class="generate" id="quickCapture" type="button">加入收件箱</button></div>
+            <label class="ai-label" for="projectSelect">查看与管理项目</label>
+            <select id="projectSelect" aria-describedby="projectHint"><option value="all">全部项目</option><option value="inbox">收件箱</option></select>
+            <p class="ai-copy" id="projectHint"></p>
+            <label class="label" for="projectName">新项目名称 / 当前项目的新名称</label>
+            <input id="projectName" type="text" maxlength="40" placeholder="例如：工作、学习、生活">
+            <div class="workspace-actions"><button class="btn" id="createProject" type="button">＋ 新建项目</button><button class="btn" id="renameProject" type="button" disabled>重命名</button><button class="btn" id="archiveProject" type="button" disabled>归档项目</button></div>
+          </div>
+        </section>
         <section class="card" aria-labelledby="promptHeading">
           <div class="cardhead">
             <h2 class="cardtitle" id="promptHeading"><span class="step">01</span>描述你的桌面待办</h2>
@@ -84,6 +97,7 @@
           </div>
         </div>
         <div class="preview">
+          <p class="export-scope" id="exportScope" role="status"></p>
           <div class="sync-banner" id="syncBanner" role="alert" hidden><p id="syncMessage"></p><div class="actions"><button class="btn" id="loadRemote" type="button">载入另一窗口</button><button class="btn" id="keepLocal" type="button">保留本页修改</button></div></div>
           <div class="previewtop"><span class="hint">点击文字编辑 · 拖动 ⠿ 或用 ↑↓ 排序</span><span class="live"><i aria-hidden="true"></i> READY</span></div>
           <div class="appearance-controls">

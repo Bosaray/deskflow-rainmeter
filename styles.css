@@ -199,3 +199,12 @@ h1 { font-size: clamp(32px,4vw,50px); letter-spacing: -2px; line-height: 1.08; m
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+/* Workspace controls share the existing dark/lime palette. */
+.workspace-row { display:flex; gap:10px; flex-wrap:wrap; }
+.workspace-row input { flex:1 1 200px; min-width:0; }
+.workspace-card input,.workspace-card select { box-sizing:border-box; background:var(--bg, #101516); color:inherit; border:1px solid #35403b; border-radius:9px; padding:12px; font:inherit; }
+.workspace-card #projectSelect,.workspace-card #projectName { width:100%; }
+.workspace-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.workspace-row .generate { padding:12px 16px; }
+.export-scope { color:#919d92; font-size:12px; line-height:1.7; margin:0 0 14px; }
+.task-meta .task-project { width:105px; max-width:130px; }

@@ -196,7 +196,7 @@ test('JSON backup includes independent drafts and settings', async () => {
   const h = createHarness({ draft: original });
   await h.get('#exportBackup').click();
   const data = JSON.parse(await h.blobs.get(h.document.downloads[0].url).text());
-  assert.equal(data.schemaVersion, 1);
+  assert.equal(data.schemaVersion, 2);
   assert.equal(data.items[0].id, 'a');
   assert.equal(data.drafts.prompt, original.prompt);
   assert.equal(data.drafts.aiPrompt, original.aiPrompt);
@@ -266,7 +266,7 @@ test('unrelated skin cannot overwrite the current list', async () => {
   const encoded = Core.encodeUtf16LE('[Variables]\nTask1Id=not-current\nTask1Done=1');
   h.get('#skinFile').files = [{ size: encoded.byteLength, arrayBuffer: async () => encoded.buffer }];
   await h.get('#skinFile').dispatch('change');
-  assert.deepEqual(h.saved().items, original.items);
+  assert.deepEqual(h.saved().items, Core.normalizeDraft(original).items);
   assert.ok(h.get('#toast').textContent.includes('没有可匹配'));
 });
 
